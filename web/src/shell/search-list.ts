@@ -4,7 +4,7 @@
 import { html, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
 import { ListElement } from "./list-element.js";
-import { apiBase } from "./endpoints.js";
+import { apiBase, checkedFetch } from "./endpoints.js";
 import { emptyNote, errorAlert, loadingNote } from "./ui.js";
 import type { ContentRef } from "./types.js";
 import type { SearchHit } from "./generated/SearchHit.js";
@@ -48,7 +48,7 @@ export class SearchList extends ListElement {
     this.loading = true;
     this.error = "";
     try {
-      const res = await fetch(`${apiBase()}${this.endpoint}`, {
+      const res = await checkedFetch(`${apiBase()}${this.endpoint}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ q }),

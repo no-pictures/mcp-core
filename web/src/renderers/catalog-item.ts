@@ -3,7 +3,7 @@
 
 import { registerRenderer } from "../shell/registry.js";
 import { renderJson } from "./json.js";
-import { apiBase } from "../shell/endpoints.js";
+import { apiBase, checkedFetch } from "../shell/endpoints.js";
 import type { ContentRef } from "../shell/types.js";
 
 /**
@@ -22,7 +22,7 @@ registerRenderer("catalog-item", {
     loading.textContent = "Loading...";
     host.replaceChildren(loading);
     try {
-      const res = await fetch(`${apiBase()}/catalog/items/${encodeURIComponent(id)}`);
+      const res = await checkedFetch(`${apiBase()}/catalog/items/${encodeURIComponent(id)}`);
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }

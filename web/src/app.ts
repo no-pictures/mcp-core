@@ -20,7 +20,7 @@ import "./shell/entity-list.js";
 // Safe sandboxed-iframe + markdown elements (used by the html/md renderers and markdown fields).
 import "./shell/frame.js";
 import "./shell/markdown.js";
-import { apiBase, isReachable } from "./shell/endpoints.js";
+import { apiBase, checkedFetch, isReachable } from "./shell/endpoints.js";
 import type { Manifest, ViewDescriptor } from "./shell/types.js";
 
 interface ShellElement extends HTMLElement {
@@ -34,7 +34,7 @@ interface ShellElement extends HTMLElement {
  *  (from `{api-base}/catalog/schema`). Empty when the server has no typed catalog. */
 async function typedCatalogViews(): Promise<ViewDescriptor[]> {
   try {
-    const res = await fetch(`${apiBase()}/catalog/schema`);
+    const res = await checkedFetch(`${apiBase()}/catalog/schema`);
     if (!res.ok) {
       return [];
     }
