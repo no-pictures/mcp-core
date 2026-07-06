@@ -119,18 +119,27 @@ where
             }
 
             // No valid auth - return 401
-            let response = Response::builder()
-                .status(StatusCode::UNAUTHORIZED)
-                .header(
-                    header::WWW_AUTHENTICATE,
-                    format!("Bearer, Basic realm=\"{}\"", realm),
-                )
-                .body(Body::from("Unauthorized"))
-                .unwrap();
-
-            Ok(response)
+            Ok(unauthorized(&realm))
         })
     }
+}
+
+/// Build the 401 challenge response without panicking: the realm is escaped per the
+/// quoted-string rules, and a realm that still cannot form a valid header value (control
+/// bytes) degrades to a challenge without a realm parameter.
+fn unauthorized(realm: &str) -> Response {
+    use axum::http::HeaderValue;
+
+    let quoted = realm.replace('\\', "\\\\").replace('"', "\\\"");
+    let challenge = HeaderValue::from_str(&format!("Bearer, Basic realm=\"{quoted}\""))
+        .unwrap_or_else(|_| HeaderValue::from_static("Bearer, Basic"));
+
+    let mut response = Response::new(Body::from("Unauthorized"));
+    *response.status_mut() = StatusCode::UNAUTHORIZED;
+    response
+        .headers_mut()
+        .insert(header::WWW_AUTHENTICATE, challenge);
+    response
 }
 
 /// Constant-time compare, so the token can't be recovered via response timing.
@@ -265,5 +274,44 @@ mod tests {
             .to_str()
             .unwrap();
         assert!(www_auth.contains("my-custom-realm"));
+    }
+
+    #[tokio::test]
+    async fn test_header_invalid_realm_does_not_panic() {
+        let app =
+            Router::new()
+                .route("/test", get(test_handler))
+                .layer(TokenAuthLayer::with_realm(
+                    "secret".to_string(),
+                    "bad\nrealm".to_string(),
+                ));
+
+        let request = Request::builder().uri("/test").body(Body::empty()).unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response.headers().get(header::WWW_AUTHENTICATE).unwrap(),
+            "Bearer, Basic"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_realm_quotes_are_escaped() {
+        let app =
+            Router::new()
+                .route("/test", get(test_handler))
+                .layer(TokenAuthLayer::with_realm(
+                    "secret".to_string(),
+                    "a\"b".to_string(),
+                ));
+
+        let request = Request::builder().uri("/test").body(Body::empty()).unwrap();
+
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(
+            response.headers().get(header::WWW_AUTHENTICATE).unwrap(),
+            "Bearer, Basic realm=\"a\\\"b\""
+        );
     }
 }
