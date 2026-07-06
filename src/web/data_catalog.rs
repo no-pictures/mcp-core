@@ -259,6 +259,10 @@ async fn schema<P: DataCatalog>(State(provider): State<Arc<P>>) -> Json<Vec<Enti
     Json(provider.schema())
 }
 
+/// Hard ceiling on a client-supplied page size, so one request cannot ask a provider for an
+/// arbitrarily large allocation.
+const MAX_LIST_LIMIT: usize = 500;
+
 async fn list<P: DataCatalog>(
     State(provider): State<Arc<P>>,
     Path(ty): Path<String>,
@@ -269,7 +273,8 @@ async fn list<P: DataCatalog>(
     let limit = params
         .remove("limit")
         .and_then(|s| s.parse().ok())
-        .unwrap_or(50);
+        .unwrap_or(50)
+        .min(MAX_LIST_LIMIT);
     let offset = params
         .remove("offset")
         .and_then(|s| s.parse().ok())
@@ -423,5 +428,42 @@ mod tests {
     async fn unknown_resource_is_404() {
         let (status, _) = get("/catalog/items/doc/nope").await;
         assert_eq!(status, StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn list_limit_is_clamped() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct LimitProbe(AtomicUsize);
+
+        impl DataCatalog for LimitProbe {
+            fn schema(&self) -> Vec<EntityType> {
+                vec![]
+            }
+
+            async fn list(&self, _ty: &str, query: CatalogQuery) -> CatalogPage {
+                self.0.store(query.limit, Ordering::SeqCst);
+                CatalogPage {
+                    items: vec![],
+                    total: Some(0),
+                }
+            }
+
+            async fn get(&self, _ty: &str, _id: &str) -> Option<Resource> {
+                None
+            }
+        }
+
+        let probe = Arc::new(LimitProbe(AtomicUsize::new(0)));
+        data_catalog_router(probe.clone())
+            .oneshot(
+                Request::builder()
+                    .uri("/catalog/items/doc?limit=1000000")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(probe.0.load(Ordering::SeqCst), MAX_LIST_LIMIT);
     }
 }
