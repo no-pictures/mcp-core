@@ -210,8 +210,9 @@ export class McpClient {
   }
 }
 
-/** Pull the `data:` payloads out of an SSE response body, one per event. */
-function eventStreamData(body: string): string[] {
+/** Pull the `data:` payloads out of an SSE response body, one per event.
+ *  Exported for the unit tests. */
+export function eventStreamData(body: string): string[] {
   const out: string[] = [];
   for (const line of body.split("\n")) {
     if (line.startsWith("data:")) {

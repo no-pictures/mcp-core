@@ -124,8 +124,9 @@ function json(data: unknown): TemplateResult {
   return html`<pre class="mcp-json p-3 m-0 small">${JSON.stringify(data, null, 2)}</pre>`;
 }
 
-/** Parse `text` only when it looks like a JSON object/array, so prose stays prose. */
-function tryParseJson(text: string): unknown {
+/** Parse `text` only when it looks like a JSON object/array, so prose stays prose.
+ *  Exported for the unit tests. */
+export function tryParseJson(text: string): unknown {
   const trimmed = text.trim();
   if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) {
     return undefined;

@@ -128,16 +128,18 @@ export class SchemaForm extends LitElement {
   }
 }
 
-/** Stringify a stored value for an input's `.value` (primitives only; never "[object Object]"). */
-function toInputValue(value: unknown): string {
+/** Stringify a stored value for an input's `.value` (primitives only; never "[object Object]").
+ *  Exported for the unit tests. */
+export function toInputValue(value: unknown): string {
   if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
     return String(value);
   }
   return "";
 }
 
-/** The default value object for a schema (properties whose schema declares a `default`). */
-function defaults(schema: JsonSchema | null): Record<string, unknown> {
+/** The default value object for a schema (properties whose schema declares a `default`).
+ *  Exported for the unit tests. */
+export function defaults(schema: JsonSchema | null): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const [name, def] of Object.entries(schema?.properties ?? {})) {
     if (def.default !== undefined) {
