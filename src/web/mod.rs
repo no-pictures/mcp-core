@@ -60,10 +60,11 @@ const CONTENT_SECURITY_POLICY: &str = concat!(
     env!("MCP_UI_CSP_SCRIPT_HASH"),
     "'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
 );
-/// Baseline CSP for non-UI `web` consumers (no shell, so no inline import map to hash).
+/// Baseline CSP for non-UI `web` consumers: no shell means no inline import map to hash, and
+/// no inline script is legitimate at all, so `script-src 'self'` blocks any injected one.
 #[cfg(not(feature = "web-ui"))]
 const CONTENT_SECURITY_POLICY: &str =
-    "object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'";
+    "script-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'";
 
 /// Disable powerful browser features the shell never uses.
 const PERMISSIONS_POLICY: &str = "camera=(), microphone=(), geolocation=(), payment=()";
@@ -210,7 +211,11 @@ mod tests {
         let h = res.headers();
         assert_eq!(h["x-content-type-options"], "nosniff");
         assert_eq!(h["x-frame-options"], "DENY");
-        assert!(h.contains_key("content-security-policy"));
+        // Both CSP variants (web-ui and plain web) must lock scripts down and forbid framing.
+        let csp = h["content-security-policy"].to_str().unwrap();
+        assert!(csp.contains("script-src 'self'"), "CSP was: {csp}");
+        assert!(csp.contains("object-src 'none'"), "CSP was: {csp}");
+        assert!(csp.contains("frame-ancestors 'none'"), "CSP was: {csp}");
         assert!(h.contains_key("referrer-policy"));
         assert!(h.contains_key("permissions-policy"));
         // The permissive wildcard CORS is gone.

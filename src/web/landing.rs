@@ -73,7 +73,9 @@ const STYLE: &str = include_str!(env!("MCP_LANDING_CSS"));
 
 /// `GET /`: render the landing/info page.
 pub async fn info_page(State(landing): State<Landing>, headers: HeaderMap) -> Html<String> {
-    let o = origin(&headers);
+    // `origin()` reflects the request's `Host`/`X-Forwarded-Proto`; escape it like every
+    // other interpolated value so a crafted header cannot inject markup.
+    let o = escape(&origin(&headers));
     let name = escape(&landing.name);
 
     let mut transports = String::new();
@@ -116,4 +118,55 @@ pub async fn info_page(State(landing): State<Landing>, headers: HeaderMap) -> Ht
          <title>{name}</title><style>{STYLE}</style></head><body>\
          <h1>{name}</h1><p class=\"muted\">MCP server</p>{transports}{access}</body></html>"
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+
+    async fn page(landing: Landing, headers: HeaderMap) -> String {
+        info_page(State(landing), headers).await.0
+    }
+
+    #[tokio::test]
+    async fn origin_reflects_host_and_forwarded_proto() {
+        let mut headers = HeaderMap::new();
+        headers.insert("host", HeaderValue::from_static("mcp.example.org"));
+        headers.insert("x-forwarded-proto", HeaderValue::from_static("https"));
+        let html = page(Landing::new("demo").mcp(true).sse(true), headers).await;
+        assert!(html.contains("https://mcp.example.org/mcp"));
+        assert!(html.contains("https://mcp.example.org/sse"));
+    }
+
+    #[tokio::test]
+    async fn crafted_host_header_is_escaped() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "host",
+            HeaderValue::from_static("evil\"><script>alert(1)</script>"),
+        );
+        let html = page(Landing::new("demo").mcp(true), headers).await;
+        assert!(!html.contains("<script>alert(1)</script>"), "html: {html}");
+        assert!(html.contains("&lt;script&gt;alert(1)&lt;/script&gt;"));
+    }
+
+    #[tokio::test]
+    async fn crafted_forwarded_proto_is_escaped() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-proto",
+            HeaderValue::from_static("<img src=x onerror=alert(1)>"),
+        );
+        let html = page(Landing::new("demo").sse(true), headers).await;
+        assert!(!html.contains("<img"), "html: {html}");
+    }
+
+    #[tokio::test]
+    async fn server_name_is_escaped() {
+        let headers = HeaderMap::new();
+        let html = page(Landing::new("a<b> & \"c\"").mcp(true), headers).await;
+        assert!(!html.contains("a<b>"));
+        assert!(html.contains("a&lt;b&gt; &amp; &quot;c&quot;"));
+    }
 }
