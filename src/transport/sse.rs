@@ -315,3 +315,195 @@ impl Default for AuthSseServer {
         Self::new().0
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::body::{Body, BodyDataStream};
+    use axum::http::Request;
+    use tower::util::ServiceExt;
+
+    /// Reads SSE events (`...\n\n`-terminated) off a response body, buffering across chunks.
+    struct EventReader {
+        stream: BodyDataStream,
+        buf: String,
+    }
+
+    impl EventReader {
+        fn new(body: Body) -> Self {
+            Self {
+                stream: body.into_data_stream(),
+                buf: String::new(),
+            }
+        }
+
+        async fn next_event(&mut self) -> String {
+            loop {
+                if let Some(end) = self.buf.find("\n\n") {
+                    let event = self.buf[..end].to_string();
+                    self.buf.drain(..end + 2);
+                    return event;
+                }
+                let chunk = self
+                    .stream
+                    .next()
+                    .await
+                    .expect("SSE stream ended without a full event")
+                    .expect("SSE stream errored");
+                self.buf.push_str(std::str::from_utf8(&chunk).unwrap());
+            }
+        }
+    }
+
+    /// Opens the SSE stream and returns the advertised session id, the endpoint-event data
+    /// line, and the reader positioned after the endpoint event.
+    async fn open_sse(router: &Router, sse_path: &str) -> (String, String, EventReader) {
+        let res = router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .uri(sse_path)
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(res.status(), StatusCode::OK);
+        let mut reader = EventReader::new(res.into_body());
+        let event = reader.next_event().await;
+        assert!(event.contains("event: endpoint"), "event: {event}");
+        let data = event
+            .lines()
+            .find_map(|l| l.strip_prefix("data: "))
+            .expect("endpoint event carries a data line")
+            .to_string();
+        let session_id = data
+            .split_once("sessionId=")
+            .expect("endpoint data carries the session id")
+            .1
+            .to_string();
+        (session_id, data, reader)
+    }
+
+    async fn post_message(router: &Router, path_query: &str) -> StatusCode {
+        router
+            .clone()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri(path_query)
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"jsonrpc":"2.0","id":1,"method":"ping"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap()
+            .status()
+    }
+
+    /// The cleanup paths remove sessions from a spawned task; poll until the store agrees.
+    async fn eventually(router: &Router, path_query: &str, want: StatusCode) {
+        for _ in 0..500 {
+            if post_message(router, path_query).await == want {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(2)).await;
+        }
+        panic!("POST {path_query} never returned {want}");
+    }
+
+    #[test]
+    fn session_ids_are_32_hex_chars_and_unique() {
+        let a = generate_session_id();
+        let b = generate_session_id();
+        assert_eq!(a.len(), 32);
+        assert!(a.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_ne!(a, b);
+    }
+
+    #[tokio::test]
+    async fn endpoint_event_advertises_the_post_path() {
+        let (_server, router) = AuthSseServer::new();
+        let (session_id, data, _reader) = open_sse(&router, "/sse").await;
+        assert_eq!(data, format!("/message?sessionId={session_id}"));
+    }
+
+    #[tokio::test]
+    async fn base_path_prefixes_routes_and_advertisement() {
+        let (_server, router) = AuthSseServer::with_base_path("/mcp");
+        let (session_id, data, _reader) = open_sse(&router, "/mcp/sse").await;
+        assert_eq!(data, format!("/mcp/message?sessionId={session_id}"));
+    }
+
+    #[tokio::test]
+    async fn post_to_unknown_session_is_404() {
+        let (_server, router) = AuthSseServer::new();
+        assert_eq!(
+            post_message(&router, "/message?sessionId=nope").await,
+            StatusCode::NOT_FOUND
+        );
+    }
+
+    #[tokio::test]
+    async fn post_routes_the_message_to_the_transport() {
+        let (mut server, router) = AuthSseServer::new();
+        let (session_id, _, _reader) = open_sse(&router, "/sse").await;
+        let mut transport = server.next_transport().await.expect("one transport");
+
+        let status = post_message(&router, &format!("/message?sessionId={session_id}")).await;
+        assert_eq!(status, StatusCode::ACCEPTED);
+
+        let received = transport.next().await.expect("client message arrives");
+        let value = serde_json::to_value(&received).unwrap();
+        assert_eq!(value["method"], "ping");
+    }
+
+    #[tokio::test]
+    async fn transport_sink_streams_messages_to_the_client() {
+        let (mut server, router) = AuthSseServer::new();
+        let (_, _, mut reader) = open_sse(&router, "/sse").await;
+        let mut transport = server.next_transport().await.expect("one transport");
+
+        let message: TxJsonRpcMessage<RoleServer> =
+            serde_json::from_value(serde_json::json!({"jsonrpc":"2.0","id":1,"method":"ping"}))
+                .unwrap();
+        futures::SinkExt::send(&mut transport, message)
+            .await
+            .unwrap();
+
+        let event = reader.next_event().await;
+        assert!(event.contains("event: message"), "event: {event}");
+        assert!(event.contains(r#""method":"ping""#), "event: {event}");
+    }
+
+    #[tokio::test]
+    async fn client_disconnect_cleans_up_the_session() {
+        let (_server, router) = AuthSseServer::new();
+        let (session_id, _, reader) = open_sse(&router, "/sse").await;
+        let uri = format!("/message?sessionId={session_id}");
+        assert_eq!(post_message(&router, &uri).await, StatusCode::ACCEPTED);
+
+        // Dropping the response body is the client disconnect; the drop guard fires.
+        drop(reader);
+        eventually(&router, &uri, StatusCode::NOT_FOUND).await;
+    }
+
+    #[tokio::test]
+    async fn transport_close_cleans_up_the_session() {
+        let (mut server, router) = AuthSseServer::new();
+        let (session_id, _, _reader) = open_sse(&router, "/sse").await;
+        let mut transport = server.next_transport().await.expect("one transport");
+        let uri = format!("/message?sessionId={session_id}");
+        assert_eq!(post_message(&router, &uri).await, StatusCode::ACCEPTED);
+
+        futures::SinkExt::close(&mut transport).await.unwrap();
+        eventually(&router, &uri, StatusCode::NOT_FOUND).await;
+    }
+
+    #[tokio::test]
+    async fn next_transport_ends_when_the_router_is_dropped() {
+        let (mut server, router) = AuthSseServer::new();
+        drop(router);
+        assert!(server.next_transport().await.is_none());
+    }
+}
