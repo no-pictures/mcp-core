@@ -12,6 +12,10 @@
 //! detail view. This keeps the example a faithful contract test for the interfaces consumers
 //! depend on (see web/e2e/shell).
 //!
+//! The binary speaks the shared [`mcp_core::ServerArgs`] flags, so `mcp_core::testing` can
+//! drive it over both transports (see tests/demo_harness.rs): `--stdio` serves MCP on
+//! stdin/stdout; every other invocation serves HTTP on `--http-port` (default 8080).
+//!
 //! Run: `cargo run -p mcp-ui-demo`, then open http://127.0.0.1:8080/.
 
 use std::collections::BTreeMap;
@@ -299,8 +303,26 @@ impl SearchProvider for DemoSearch {
     }
 }
 
+/// The demo CLI: exactly the shared server flags.
+#[derive(clap::Parser)]
+#[command(name = "mcp-ui-demo", about = "Demo MCP server on mcp-core's web UI")]
+struct Cli {
+    #[command(flatten)]
+    server: mcp_core::ServerArgs,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let args = <Cli as clap::Parser>::parse().server;
+
+    // MCP over stdio (exclusive): stdout belongs to the protocol, so no tracing setup.
+    if args.stdio {
+        use rmcp::ServiceExt;
+        let service = Demo::new().serve(rmcp::transport::io::stdio()).await?;
+        service.waiting().await?;
+        return Ok(());
+    }
+
     mcp_core::init_tracing("mcp_ui_demo=debug,mcp_core=info");
 
     // MCP over Streamable HTTP at /mcp.
@@ -309,25 +331,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Assemble the whole app through `app_router` so one auth policy covers the UI, the REST API,
     // AND /mcp together: a public landing/login page at /, the shell at /ui/, this crate's plain-JS
     // consumer content at /app, the typed catalog + search at /api (backing the built-in Catalog +
-    // Search views), and /mcp. Set AUTH_TOKEN to require a credential -- the browser logs in at /
-    // (a SameSite=Strict session cookie), then reaches /ui + /mcp same-origin; MCP clients send
-    // `Authorization: Bearer`. Unset (the default) leaves the demo open. The landing page lists the
-    // enabled transports; here only Streamable HTTP /mcp (hence `.mcp(true)`).
+    // Search views), and /mcp. Set AUTH_TOKEN (or pass --auth-token) to require a credential --
+    // the browser logs in at / (a SameSite=Strict session cookie), then reaches /ui + /mcp
+    // same-origin; MCP clients send `Authorization: Bearer`. Unset (the default) leaves the demo
+    // open. The landing page lists the enabled transports; here only Streamable HTTP /mcp (hence
+    // `.mcp(true)`).
     let web_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("web");
     let api =
         data_catalog_router(Arc::new(DemoDataCatalog)).merge(search_router(Arc::new(DemoSearch)));
     let extra = mcp.nest_service("/app", ServeDir::new(web_dir));
-    let auth_token = std::env::var("AUTH_TOKEN").ok();
     let app: Router = app_router(
         api,
         "/api",
         extra,
-        auth_token.as_deref(),
+        args.auth_token.as_deref(),
         Landing::new("mcp-ui-demo").mcp(true),
     );
 
-    let listen: Vec<IpAddr> = vec!["127.0.0.1".parse().unwrap()];
-    tracing::info!("landing on http://127.0.0.1:8080/   UI on /ui/   MCP on /mcp");
-    serve(app, listen, 8080).await?;
+    let listen: Vec<IpAddr> = args.listen_addrs();
+    let port = args.http_port;
+    tracing::info!("landing on http://127.0.0.1:{port}/   UI on /ui/   MCP on /mcp");
+    serve(app, listen, port).await?;
     Ok(())
 }
