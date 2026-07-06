@@ -45,16 +45,19 @@ pub struct BaseConfig {
 impl BaseConfig {
     /// Create a new config from environment variables.
     pub fn from_env() -> Self {
+        Self::from_lookup(|key| std::env::var(key).ok())
+    }
+
+    /// Build from a key lookup; `from_env` passes the process environment, tests pass maps so
+    /// they never mutate process-global state.
+    fn from_lookup(get: impl Fn(&str) -> Option<String>) -> Self {
         Self {
-            host: std::env::var("HOST").unwrap_or_else(|_| "127.0.0.1".to_string()),
-            port: std::env::var("PORT")
-                .ok()
-                .and_then(|p| p.parse().ok())
-                .unwrap_or(3000),
-            data_path: std::env::var("DATA_PATH")
+            host: get("HOST").unwrap_or_else(|| "127.0.0.1".to_string()),
+            port: get("PORT").and_then(|p| p.parse().ok()).unwrap_or(3000),
+            data_path: get("DATA_PATH")
                 .map(PathBuf::from)
-                .unwrap_or_else(|_| PathBuf::from("./data")),
-            auth_token: std::env::var("AUTH_TOKEN").ok(),
+                .unwrap_or_else(|| PathBuf::from("./data")),
+            auth_token: get("AUTH_TOKEN"),
         }
     }
 
@@ -102,18 +105,40 @@ mod tests {
 
     #[test]
     fn test_default_values() {
-        // Clear env vars to test defaults
-        std::env::remove_var("HOST");
-        std::env::remove_var("PORT");
-        std::env::remove_var("DATA_PATH");
-        std::env::remove_var("AUTH_TOKEN");
-
-        let config = BaseConfig::from_env();
+        let config = BaseConfig::from_lookup(|_| None);
         assert_eq!(config.host, "127.0.0.1");
         assert_eq!(config.port, 3000);
         assert_eq!(config.data_path, PathBuf::from("./data"));
         assert!(config.auth_token.is_none());
         assert!(!config.auth_enabled());
+    }
+
+    #[test]
+    fn test_lookup_overrides() {
+        let config = BaseConfig::from_lookup(|key| {
+            Some(
+                match key {
+                    "HOST" => "0.0.0.0",
+                    "PORT" => "8123",
+                    "DATA_PATH" => "/srv/data",
+                    "AUTH_TOKEN" => "sekret",
+                    _ => return None,
+                }
+                .to_string(),
+            )
+        });
+        assert_eq!(config.host, "0.0.0.0");
+        assert_eq!(config.port, 8123);
+        assert_eq!(config.data_path, PathBuf::from("/srv/data"));
+        assert_eq!(config.auth_token.as_deref(), Some("sekret"));
+        assert!(config.auth_enabled());
+    }
+
+    #[test]
+    fn test_invalid_port_falls_back_to_default() {
+        let config =
+            BaseConfig::from_lookup(|key| (key == "PORT").then(|| "not-a-port".to_string()));
+        assert_eq!(config.port, 3000);
     }
 
     #[test]
