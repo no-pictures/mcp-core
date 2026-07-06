@@ -76,6 +76,9 @@ jobs:
       - name: Check formatting, lint, and types
         run: npm run check
 
+      - name: Run unit tests
+        run: npm run test:unit
+
   e2e:
     name: E2E
     runs-on: ubuntu-latest

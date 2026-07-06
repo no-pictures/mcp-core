@@ -31,9 +31,10 @@ test.describe("Typed catalog", () => {
 
     const detail = page.locator(".mcp-entity");
     await expect(detail.getByRole("heading", { name: "Alpha record" })).toBeVisible();
-    // x-mcp-kind: table -> a Bootstrap table; markdown -> the summary text flows in the body.
+    // x-mcp-kind: table -> a Bootstrap table; markdown -> <mcp-markdown> in the body (its
+    // sandboxed-iframe content is covered by rendering.spec.ts).
     await expect(detail.locator("table")).toContainText("score");
-    await expect(detail).toContainText("first");
+    await expect(detail.locator("mcp-markdown")).toBeVisible();
 
     // The to-one `related` relation navigates to the linked entity.
     await detail.getByRole("button", { name: "Beta record" }).click();
