@@ -9,15 +9,17 @@
 //! - **config**: Configuration management with environment variable support
 //! - **transport**: HTTP transports for MCP — legacy SSE (`/sse`) and Streamable HTTP (`/mcp`)
 //! - **bootstrap**: Tracing initialization utilities
+//! - **web**: Hardened axum harness; with `web-ui`, the embedded inspection shell,
+//!   typed catalog and search
+//! - **cli**: Shared clap flags for server binaries
+//! - **testing**: Consumer test harness driving a server binary with a real MCP client
 //!
 //! # Features
 //!
-//! - `auth` - Token authentication middleware (enabled by default)
-//! - `config` - Configuration utilities (enabled by default)
-//! - `bootstrap` - Tracing setup (enabled by default)
-//! - `sse` - Legacy MCP HTTP+SSE transport (`/sse` + `/message`)
-//! - `streamable-http` - MCP Streamable HTTP transport (`/mcp`)
-//! - `full` - All features
+//! See the README's feature table for the complete list. `full` (the default) bundles the
+//! headless server pieces: `auth`, `config`, `sse`, `streamable-http`, `stdio` and
+//! `bootstrap`. The web harness (`web`, `web-ui`), `cli`, `server` and `test-harness` are
+//! separate opt-ins.
 //!
 //! # Example
 //!
