@@ -20,39 +20,35 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Restore Cargo cache
-        uses: actions/cache/restore@v6
+      - name: Install Rust toolchain
+        uses: gronke/rust-ci/.github/actions/install-toolchain@v0.0.4
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-
+          components: rustfmt clippy
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
+      # Replaces the hand-rolled restore/save pair; incremental compilation defaults off in CI.
+      - name: Cache cargo
+        uses: gronke/rust-ci/.github/actions/rust-cache@v0.0.4
+        with:
+          prefix: test
+          cache-target: "true"
 
-      - name: Run Clippy
-        run: cargo clippy --all-targets --all-features --no-deps -- -D warnings
+      - name: Lint and test (all features)
+        uses: gronke/rust-ci/.github/actions/lint-and-test@v0.0.4
+        with:
+          features: "--all-features"
 
-      - name: Run tests
-        run: cargo test --all-features --verbose
+      # A second feature universe: the crate's point is slim opt-in graphs, so the bare build
+      # must stay green too. fmt is universe-independent and already ran above.
+      - name: Lint and test (no default features)
+        uses: gronke/rust-ci/.github/actions/lint-and-test@v0.0.4
+        with:
+          features: "--no-default-features"
+          fmt: "false"
 
       # cargo test --all-features runs the ts-export test, regenerating web/src/shell/generated/.
       # A diff here means the Rust wire types drifted from the committed TypeScript bindings.
       - name: Check generated TS bindings are in sync
         run: git diff --exit-code -- web/src/shell/generated
-
-      - name: Save Cargo cache
-        uses: actions/cache/save@v6
-        if: always()
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-${{ hashFiles('**/Cargo.lock') }}
 
   web:
     name: Web
@@ -85,15 +81,14 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Restore Cargo cache
-        uses: actions/cache/restore@v6
+      - name: Install Rust toolchain
+        uses: gronke/rust-ci/.github/actions/install-toolchain@v0.0.4
+
+      - name: Cache cargo
+        uses: gronke/rust-ci/.github/actions/rust-cache@v0.0.4
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: cargo-
+          prefix: e2e
+          cache-target: "true"
 
       - name: Build the example MCP server
         run: cargo build -p mcp-ui-demo
