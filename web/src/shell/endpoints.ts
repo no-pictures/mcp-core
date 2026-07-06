@@ -37,3 +37,18 @@ export async function isReachable(url: string): Promise<boolean> {
     return false;
   }
 }
+
+/** `fetch` for the shell's same-origin API calls: a 401 means the session cookie expired, so
+ *  navigate to the landing page to sign in again and throw so the caller stops rendering.
+ *  (Unauthenticated navigations are redirected by the server; fetches only get the 401.) */
+export async function checkedFetch(
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
+  const res = await fetch(input, init);
+  if (res.status === 401) {
+    window.location.assign("/");
+    throw new Error("Session expired, redirecting to sign-in");
+  }
+  return res;
+}

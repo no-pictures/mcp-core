@@ -5,7 +5,7 @@ import { html, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
 import { ListElement } from "./list-element.js";
 import { McpClient } from "./mcp-client.js";
-import { apiBase, mcpEndpoint } from "./endpoints.js";
+import { apiBase, checkedFetch, mcpEndpoint } from "./endpoints.js";
 import { emptyNote, errorAlert, loadingNote, toolResultText, workingNote } from "./ui.js";
 import type { CatalogAction, CatalogItem, ContentRef } from "./types.js";
 
@@ -53,7 +53,7 @@ export class CatalogList extends ListElement {
 
   private async load(): Promise<void> {
     try {
-      const res = await fetch(`${apiBase()}${this.endpoint}`);
+      const res = await checkedFetch(`${apiBase()}${this.endpoint}`);
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }

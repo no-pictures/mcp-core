@@ -4,7 +4,7 @@
 // Fetches and caches the catalog schema, and loads a single resource. Shared by the entity
 // element and the entity-list element.
 
-import { apiBase } from "./endpoints.js";
+import { apiBase, checkedFetch } from "./endpoints.js";
 import type { EntityType, JsonApiResource, Resource } from "./catalog-types.js";
 
 let cache: Promise<Map<string, EntityType>> | null = null;
@@ -12,7 +12,7 @@ let cache: Promise<Map<string, EntityType>> | null = null;
 /** The catalog schema (entity types by name), fetched once from `{api}/catalog/schema`. */
 export function entitySchema(): Promise<Map<string, EntityType>> {
   if (!cache) {
-    cache = fetch(`${apiBase()}/catalog/schema`)
+    cache = checkedFetch(`${apiBase()}/catalog/schema`)
       .then((res) => {
         if (!res.ok) {
           throw new Error(`HTTP ${res.status}`);
@@ -40,7 +40,7 @@ export async function loadEntity(
 ): Promise<{ type?: EntityType; resource: Resource }> {
   const [typeDef, body] = await Promise.all([
     entityType(type),
-    fetch(`${apiBase()}/catalog/items/${type}/${id}`).then((res) => {
+    checkedFetch(`${apiBase()}/catalog/items/${type}/${id}`).then((res) => {
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }

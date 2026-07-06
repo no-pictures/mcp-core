@@ -171,6 +171,11 @@ export class McpClient {
       headers,
       body: JSON.stringify(body),
     });
+    if (res.status === 401 && !this.authToken) {
+      // Cookie-session mode: the 401 means the session expired -- sign in again.
+      window.location.assign("/");
+      throw new Error("Session expired, redirecting to sign-in");
+    }
     if (!res.ok) {
       throw new Error(`MCP ${res.status} from ${this.endpoint}`);
     }
