@@ -86,7 +86,9 @@ fn build_shell() -> web_modules::Result<()> {
     // runtime import, and that scan is whitespace-sensitive -- minify happens last, over the dist.
     web_modules::typescript::compile_directory_with(&src, &out, &TranspileOptions::default())?;
     web_modules::scss::compile_directory(&src, &out, &[out.as_path()])?;
-    web_modules::static_files::copy_static(&src, &out)?;
+    // The default reject set skips sources (.ts/.scss/.tera), dotfiles, config manifests and
+    // secrets, so only genuinely static assets land in the dist.
+    web_modules::static_files::copy_static(&src, &out, &web_modules::reject::Reject::default())?;
 
     // Vendor the oxc legacy-decorator runtime the transform emits
     // (@oxc-project/runtime/helpers/decorate) so the @property/@state shell resolves it.
@@ -99,7 +101,16 @@ fn build_shell() -> web_modules::Result<()> {
     // vendor_transform_runtime: its scan matches `from "` (with a space), so a minified `from"`
     // would hide the @oxc-project runtime import and it would never get vendored. CSS is already
     // compressed by the scss default.
-    web_modules::minify::minify_directory(&out)?;
+    for entry in walkdir::WalkDir::new(&out)
+        .into_iter()
+        .filter_map(|e| e.ok())
+    {
+        let path = entry.path();
+        if path.extension().is_some_and(|ext| ext == "js") {
+            let source = std::fs::read_to_string(path)?;
+            std::fs::write(path, web_modules::minify::minify_str(&source, path)?)?;
+        }
+    }
 
     // CSP: hash the inline import-map script's content - the bytes between the tags, which is
     // what the browser hashes - so the runtime CSP can allow exactly it via script-src
