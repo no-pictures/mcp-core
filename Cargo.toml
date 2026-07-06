@@ -3,6 +3,8 @@ name = "mcp-core"
 description = "Common MCP and Webserver infrastructure"
 version = "0.1.0"
 edition = "2021"
+# Highest requirement in the graph: the web_modules build-dependency, compiled for every build.
+rust-version = "1.95"
 authors = ["Stefan Grönke <stefan@gronke.net>"]
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/MCPeas/mcp-core"
