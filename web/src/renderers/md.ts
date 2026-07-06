@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { registerRenderer } from "../shell/registry.js";
+import { checkedFetch } from "../shell/endpoints.js";
 import "../shell/markdown.js";
 import type { ContentRef, MdRef } from "../shell/types.js";
 
@@ -10,7 +11,10 @@ registerRenderer("md", {
     const r = ref as MdRef;
     let text = r.text ?? "";
     if (!text && r.url) {
-      const res = await fetch(r.url);
+      const res = await checkedFetch(r.url);
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status} loading ${r.url}`);
+      }
       text = await res.text();
     }
     // <mcp-markdown> converts + sandboxes when the `web-markdown` feature is built in, and falls

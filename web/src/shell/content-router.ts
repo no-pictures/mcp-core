@@ -1,11 +1,12 @@
 // SPDX-FileCopyrightText: 2025-2026 Stefan Grönke <stefan@gronke.net>
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { LitElement, html } from "lit";
+import { LitElement, html, render } from "lit";
 import { property, state } from "lit/decorators.js";
 import type { PropertyValues } from "lit";
 import { getRenderer } from "./registry.js";
 import { renderJson } from "../renderers/json.js";
+import { errorAlert } from "./ui.js";
 import type { ContentRef } from "./types.js";
 
 /** A fresh content host node. */
@@ -54,7 +55,12 @@ export class ContentRouter extends LitElement {
       renderJson(host, data);
       return;
     }
-    await renderer.render(this.ref, host);
+    try {
+      await renderer.render(this.ref, host);
+    } catch (e) {
+      // A failed renderer (fetch error, broken dynamic import) must not leave a blank pane.
+      render(errorAlert(e), host);
+    }
   }
 
   render() {
