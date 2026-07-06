@@ -227,7 +227,7 @@ export class Entity extends LitElement {
         ? html`<input
             type="search"
             class="form-control form-control-sm mb-2"
-            placeholder="Filtern..."
+            placeholder="Filter..."
             .value=${this.relFilter[rel.name] ?? ""}
             @input=${(e: Event) => {
               this.relFilter = {

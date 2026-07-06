@@ -6,7 +6,7 @@ import { property, state } from "lit/decorators.js";
 import { ListElement } from "./list-element.js";
 import { McpClient, type ToolResult } from "./mcp-client.js";
 import { entityType } from "./catalog-schema.js";
-import { apiBase, mcpEndpoint } from "./endpoints.js";
+import { apiBase, checkedFetch, mcpEndpoint } from "./endpoints.js";
 import { emptyNote, errorAlert, loadingNote, toolResultText, workingNote } from "./ui.js";
 import type {
   EntityAction,
@@ -101,7 +101,9 @@ export class EntityList extends ListElement {
         }
       }
       params.set("limit", String(this.limit));
-      const res = await fetch(`${apiBase()}/catalog/items/${this.entityType}?${params.toString()}`);
+      const res = await checkedFetch(
+        `${apiBase()}/catalog/items/${this.entityType}?${params.toString()}`,
+      );
       if (!res.ok) {
         throw new Error(`HTTP ${res.status}`);
       }
@@ -226,7 +228,7 @@ export class EntityList extends ListElement {
             ? html`<button
                 type="button"
                 class="btn btn-sm btn-outline-secondary ${this.editing ? "active" : ""}"
-                title="Bearbeiten"
+                title="Edit"
                 aria-pressed=${this.editing ? "true" : "false"}
                 @click=${() => {
                   this.editing = !this.editing;
