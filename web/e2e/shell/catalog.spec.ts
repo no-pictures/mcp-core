@@ -45,7 +45,7 @@ test.describe("Typed catalog", () => {
   test("an item action invokes its MCP tool and shows the result inline", async ({ page }) => {
     await openView(page, /^Record$/);
     // Per-item actions are revealed by the edit (gear) toggle.
-    await page.locator('button[title="Bearbeiten"]').click();
+    await page.locator('button[title="Edit"]').click();
 
     const alpha = page.locator(".list-group-item").filter({ hasText: "Alpha record" });
     await alpha.getByRole("button", { name: "Echo" }).click();
