@@ -50,6 +50,47 @@ jobs:
       - name: Check generated TS bindings are in sync
         run: git diff --exit-code -- web/src/shell/generated
 
+  features:
+    name: Feature matrix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: gronke/rust-ci/.github/actions/install-toolchain@v0.0.4
+
+      - name: Cache cargo
+        uses: gronke/rust-ci/.github/actions/rust-cache@v0.0.4
+        with:
+          prefix: features
+
+      # Prebuilt release binary: the org Actions allowlist admits only selected actions
+      # (github-owned, cargo-deny-action, reuse-action, gronke/*), so no taiki-e installer.
+      - name: Install cargo-hack
+        run: curl -sL https://github.com/taiki-e/cargo-hack/releases/latest/download/cargo-hack-x86_64-unknown-linux-gnu.tar.gz | tar xz -C "$HOME/.cargo/bin"
+
+      # The crate's value proposition is slim per-feature dependency graphs; building every
+      # feature in isolation catches missing #[cfg] gates that --all-features unification hides.
+      - name: Check each feature in isolation
+        run: cargo hack check --each-feature --no-dev-deps
+
+  deny:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      # Advisories, license allowlist, and registry/git sources, per deny.toml.
+      - uses: EmbarkStudios/cargo-deny-action@v2
+
+  reuse:
+    name: REUSE compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: fsfe/reuse-action@v6
+
   web:
     name: Web
     runs-on: ubuntu-latest
